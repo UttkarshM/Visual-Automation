@@ -1,103 +1,197 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import { useState } from "react"
+import { Provider } from 'react-redux'
+import { PersistGate } from 'redux-persist/integration/react'
+import { store, persistor } from '@/store/store'
+import { WorkflowEditor } from "@/components/workflow-editor"
+import { WorkflowSidebar } from "@/components/workflow-sidebar"
+import { Button } from "@/components/ui/button"
+import { Play, Save, Settings } from "lucide-react"
+import { useAppSelector, useAppDispatch } from '@/store/hooks'
+import { setSelectedNodeId, updateNode, clearWorkflow, updateNodeExecutionResult } from '@/store/nodesSlice'
+import type { NodeConfig, WorkflowExecutionResult } from '@/types/workflow'
+
+function HomePage() {
+  const dispatch = useAppDispatch()
+  const { nodes, edges, selectedNodeId } = useAppSelector((state) => state.nodes)
+  const [isRunning, setIsRunning] = useState(false)
+  const [workflowResult, setWorkflowResult] = useState<WorkflowExecutionResult | null>(null)
+
+  const handleRunWorkflow = async () => {
+    if (!nodes || nodes.length === 0) {
+      alert('Please add at least one node to the workflow before running.')
+      return
+    }
+
+    setIsRunning(true)
+
+    try {
+      const response = await fetch('/api/workflows/nodes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ nodes, edges })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const result: WorkflowExecutionResult = await response.json()
+      
+      if (result.success) {
+        console.log('Workflow executed successfully:', result)
+        setWorkflowResult(result)
+        
+        // Update all nodes with their execution results
+        if (result.result && typeof result.result === 'object') {
+          const nodeOutputs = (result.result as any).nodeOutputs || result.result
+          console.log('Node outputs received:', nodeOutputs)
+          
+          nodes.forEach(node => {
+            const nodeResult = nodeOutputs[node.id]
+            if (nodeResult) {
+              console.log(`Updating node ${node.id} (${node.type}) with result:`, nodeResult)
+              // Update the node's result data using the correct Redux action
+              dispatch(updateNodeExecutionResult({ 
+                nodeId: node.id, 
+                result: nodeResult
+              }))
+            } else {
+              console.log(`No result found for node ${node.id} in nodeOutputs:`, Object.keys(nodeOutputs))
+            }
+          })
+        }
+        
+        alert(`Workflow executed successfully! Processed ${result.executedNodes || 0} nodes.`)
+      } else {
+        console.error('Workflow execution failed:', result.error)
+        alert(`Workflow execution failed: ${result.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error calling workflow API:', error)
+      alert(`Error running workflow: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
+  const handleSaveWorkflow = () => {
+    // TODO: Implement workflow saving
+    console.log("Saving workflow...", nodes)
+  }
+
+  const handleUpdateNode = (nodeId: string, config: NodeConfig) => {
+    dispatch(updateNode({ nodeId, config }))
+  }
+
+  const handleNodeSelect = (nodeId: string | null) => {
+    dispatch(setSelectedNodeId(nodeId))
+  }
+
+  const getSelectedNode = () => {
+    return nodes.find(node => node.id === selectedNodeId) || null
+  }
+
+  const handleClearWorkflow = () => {
+    dispatch(clearWorkflow())
+  }
+
+  const handleTestSequence = () => {
+    const startNode = nodes.find(node => node.type === 'input')
+    if (!startNode) {
+      console.log('No starting node found')
+      return
+    }
+
+    const sequence = []
+    const visited = new Set()
+    let currentNode = startNode
+
+    while (currentNode && !visited.has(currentNode.id)) {
+      visited.add(currentNode.id)
+      sequence.push({
+        id: currentNode.id,
+        type: currentNode.type,
+        name: currentNode.data?.config?.name || currentNode.data?.label,
+        config: currentNode.data?.config
+      })
+
+      // Find the next node
+      const nextEdge = edges.find(edge => edge.source === currentNode.id)
+      if (nextEdge) {
+        const nextNode = nodes.find(node => node.id === nextEdge.target)
+        if (nextNode) {
+          currentNode = nextNode
+        } else {
+          break
+        }
+      } else {
+        break
+      }
+    }
+
+    console.log('Node Sequence:', sequence)
+    console.log('Total nodes in sequence:', sequence.length)
+    console.log('All nodes:', nodes)
+    console.log('All edges:', edges)
+  }
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <h1 className="text-xl font-semibold text-gray-900">Visual Automation</h1>
+          <div className="flex items-center space-x-2">
+            <Button onClick={handleRunWorkflow} disabled={isRunning} className="bg-green-600 hover:bg-green-700">
+              <Play className="w-4 h-4 mr-2" />
+              {isRunning ? "Running..." : "Run"}
+            </Button>
+            <Button onClick={handleSaveWorkflow} variant="outline">
+              <Save className="w-4 h-4 mr-2" />
+              Save
+            </Button>
+            <Button onClick={handleClearWorkflow} variant="outline">
+              Clear
+            </Button>
+            <Button onClick={handleTestSequence} variant="outline">
+              Test
+            </Button>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+        <div className="text-sm text-gray-500">
+          Nodes: {nodes.length}
+        </div>
+      </header>
+
+      <div className="flex-1 flex">
+        <div className="flex-1">
+          <WorkflowEditor 
+            selectedNode={selectedNodeId} 
+            onNodeSelect={handleNodeSelect}
+            onUpdateNode={handleUpdateNode}
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+        </div>
+
+        <WorkflowSidebar 
+          selectedNode={getSelectedNode()} 
+          onClose={() => dispatch(setSelectedNodeId(null))}
+          onUpdateNode={handleUpdateNode}
+        />
+      </div>
     </div>
-  );
+  )
+}
+
+export default function App() {
+  return (
+    <Provider store={store}>
+      <PersistGate loading={<div className="h-screen flex items-center justify-center">Loading...</div>} persistor={persistor}>
+        <HomePage />
+      </PersistGate>
+    </Provider>
+  )
 }

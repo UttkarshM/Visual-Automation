@@ -1,0 +1,11 @@
+This is a sample text file for testing the file upload and text extraction functionality.
+
+It contains multiple lines of text that should be processed by the file-to-text node.
+
+The file processor should be able to:
+1. Read this plain text file
+2. Extract all the content
+3. Return it as processed text
+
+This is useful for testing workflows that involve file processing and text extraction.
+
